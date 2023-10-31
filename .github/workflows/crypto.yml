@@ -1,0 +1,65 @@
+name: Crypto
+
+on:
+  pull_request:
+    paths:
+      - crypto/**
+      - .github/workflows/**
+
+jobs:
+  crypto_build:
+    name: Crypto library
+    runs-on: ubuntu-latest
+    env:
+      CC: gcc
+      ADDRESS_SANITIZER: 1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v23
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - run: nix-shell --run "poetry install"
+      - run: cp -r crypto crypto_noasan
+      - run: nix-shell --run "poetry run make -C crypto"
+      - run: nix-shell --run "export ADDRESS_SANITIZER=0; poetry run make -C crypto_noasan"
+      - run: mv crypto_noasan/tests/test_check crypto/tests/test_check_noasan
+      - uses: actions/upload-artifact@v3
+        with:
+          name: crypto-build
+          path: |
+            crypto/tests/aestst
+            crypto/tests/libtrezor-crypto.so
+            crypto/tests/test_check
+            crypto/tests/test_check_noasan
+            crypto/tests/test_openssl
+          retention-days: 7
+
+  crypto_test:
+    name: Crypto test
+    needs: [crypto_build]
+    runs-on: ubuntu-latest
+    env:
+      ASAN_OPTIONS: "verify_asan_link_order=0"
+      CK_TIMEOUT_MULTIPLIER: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v23
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - run: nix-shell --run "poetry install"
+      - uses: actions/download-artifact@v3
+        with:
+          name: crypto-build
+          path: crypto/tests
+      - run: chmod +x crypto/tests/*
+      - run: ./crypto/tests/aestst
+      - run: ./crypto/tests/test_check
+      - run: ./crypto/tests/test_openssl 1000
+      - run: nix-shell --run "cd crypto && ITERS=10 poetry run pytest --junitxml=tests/junit.xml tests | ts -s"
+      - run: nix-shell --run "CK_TIMEOUT_MULTIPLIER=20 valgrind -q --error-exitcode=1 ./crypto/tests/test_check_noasan | ts -s"

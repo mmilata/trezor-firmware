@@ -1,0 +1,43 @@
+name: Legacy
+
+on: [pull_request]
+
+jobs:
+#  legacy fw regular build:
+#  legacy fw regular debug build:
+#  legacy fw btconly build:
+#  legacy fw btconly debug build:
+#  legacy emu regular debug build:
+#  legacy emu regular debug asan build:
+#  legacy emu regular debug build arm:
+#  legacy emu btconly debug build:
+#  legacy emu btconly debug asan build:
+  legacy_firmware:
+    name: Firmware
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        coins: [universal, btconly]
+        #type: [normal, debuglink]
+        type: [debuglink]
+    env:
+      BITCOIN_ONLY: ${{ matrix.coins == 'universal' && '0' || '1' }}
+      DEBUG_LINK: ${{ matrix.type == 'debuglink' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v23
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - run: nix-shell --run "poetry install"
+      - run: nix-shell --run "export PRODUCTION=1 && poetry run legacy/script/cibuild"
+      - run: nix-shell --run "poetry run legacy/script/setup"
+      - run: nix-shell --run "export PRODUCTION=0 && poetry run legacy/script/cibuild"
+      - run: nix-shell --run "poetry run make -C legacy/demo"
+        if: matrix.coins == 'universal' && matrix.type == 'normal'
+      - uses: actions/upload-artifact@v3
+        with:
+          name: legacy-firmware-${{ matrix.coins }}-${{ matrix.type }}
+          path: legacy/legacy/firmware-*.bin

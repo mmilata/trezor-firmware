@@ -1,0 +1,93 @@
+name: Core
+
+on: [pull_request]
+
+jobs:
+#  core fw regular build:
+#  core fw regular debug build:
+#  core fw regular production build:
+#  core fw btconly build:
+#  core fw btconly debug build:
+#  core fw btconly production build:
+#  core fw DISC1 build:
+#  core fw R debug build:
+#  core fw R build:
+#  core unix regular build:
+#  core unix regular asan build:
+#  core unix frozen regular build:
+#  core unix frozen btconly debug build:
+#  core unix frozen btconly debug asan build:
+#  core unix frozen debug build:
+#  core unix frozen R debug build:
+#  core unix frozen R debug build arm:
+#  core unix frozen debug asan build:
+#  core unix frozen debug build arm:
+#  core macos frozen regular build:
+  core_firmware:
+    name: Build firmware
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        model: [T2T1, T2B1]
+        #coins: [universal, btconly]
+        coins: [universal]
+        #type: [normal, debuglink, production]
+        type: [normal, production]
+    env:
+      TREZOR_MODEL: ${{ matrix.model == 'T2T1' && 'T' || 'R' }}
+      BITCOIN_ONLY: ${{ matrix.coins == 'universal' && '0' || '1' }}
+      PYOPT: ${{ matrix.type == 'debuglink' && '0' || '1' }}
+      PRODUCTION: ${{ matrix.type == 'production' && '1' || '0' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v23
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - run: nix-shell --run "poetry install"
+      - run: nix-shell --run "poetry run make -C core build_boardloader build_bootloader build_prodtest" #TODO bootloader_ci
+        if: matrix.coins == 'universal' && matrix.type != 'debuglink'
+      - run: nix-shell --run "poetry run make -C core build_firmware"
+      - run: nix-shell --run "poetry run make -C core sizecheck"
+        if: matrix.coins == 'universal' && matrix.type != 'debuglink'
+      - run: cp core/build/firmware/firmware.elf firmware.elf
+      - run: cp core/build/firmware/firmware-*.bin .
+      - uses: actions/upload-artifact@v3
+        with:
+          name: core-firmware-${{ matrix.model }}-${{ matrix.coins }}-${{ matrix.type }}
+          path: |
+            firmware.elf
+            firmware-*.bin
+
+  core_unix:
+    name: Build emu
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        model: [T2T1, T2B1]
+        coins: [universal, btconly]
+        #type: [normal, debuglink]
+        type: [debuglink]
+        asan: [0] # [0, 1]
+        arch: [x86_64] # [x86_64, arm]
+    env:
+      TREZOR_MODEL: ${{ matrix.model == 'T2T1' && 'T' || 'R' }}
+      BITCOIN_ONLY: ${{ matrix.coins == 'universal' && '0' || '1' }}
+      PYOPT: ${{ matrix.type == 'debuglink' && '0' || '1' }}
+      ADDRESS_SANITIZER: ${{ matrix.asan }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: cachix/install-nix-action@v23
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - run: nix-shell --run "poetry install"
+      - run: nix-shell --run "poetry run make -C core build_unix_frozen"
+      - uses: actions/upload-artifact@v3
+        with:
+          name: core-unix-${{ matrix.model }}-${{ matrix.coins }}-${{ matrix.type }}
+          path: core/build/unix/trezor-emu-core
