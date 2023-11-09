@@ -92,6 +92,7 @@ stdenvNoCC.mkDerivation ({
     oldPythonNixpkgs.python37
     oldPythonNixpkgs.python36
   ] ++ [
+    strace
     SDL2
     SDL2_image
     bash
@@ -136,6 +137,7 @@ stdenvNoCC.mkDerivation ({
     libiconv
   ] ++ lib.optionals hardwareTest [
     uhubctl
+    tio
     ffmpeg
     dejavu_fonts
   ] ++ lib.optionals devTools [
